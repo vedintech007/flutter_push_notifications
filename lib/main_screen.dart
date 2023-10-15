@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_fcm/new_screen.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import "package:http/http.dart" as http;
 
@@ -39,13 +40,18 @@ class _MainScreenState extends State<MainScreen> {
     var iOSInitialise = const DarwinInitializationSettings();
     var initializationsSettings = InitializationSettings(android: androidInitialise, iOS: iOSInitialise);
 
-    // FlutterLocalNotificationsPlugin().initialize(initializationsSettings, onDidReceiveNotificationResponse: )
     await flutterLocalNotificationsPlugin.initialize(
       initializationsSettings,
       onDidReceiveNotificationResponse: (notification) {
         try {
-          if (notification.payload != null && notification.payload!.isNotEmpty) {
-            //
+          final payload = notification.payload;
+          if (payload != null && payload.isNotEmpty) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (BuildContext context) {
+                return NewPage(info: payload.toString());
+              }),
+            );
           } else {
             //
           }
@@ -76,6 +82,10 @@ class _MainScreenState extends State<MainScreen> {
         styleInformation: bigTextStyleInformation,
         priority: Priority.high,
         playSound: true,
+
+        /// save custom sound in
+        /// android -> src -> res -> create a folder(raw) -> put sound there and paste exact name here
+        sound: const RawResourceAndroidNotificationSound("chat"),
       );
 
       NotificationDetails platformChannelSpecifics = NotificationDetails(android: androidPlatformChannelSpecifics);
@@ -131,30 +141,36 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void sendPushMessage(String token, String body, String title) async {
-    await http.post(
-      Uri.parse("https://fcm.googleapis.com/fcm/send"),
-      headers: <String, String>{
-        "Content-Type": "application/json",
-        "Authorization": "key=$serverKey",
-      },
-      body: jsonEncode(
-        <String, dynamic>{
-          "priority": "high",
-          "data": <String, dynamic>{
-            "click_action": "FLUTTER_NOTIFICATION_CLICK",
-            "status": "done",
-            "title": title,
-            "body": body,
-          },
-          "notification": <String, dynamic>{
-            "title": title,
-            "body": body,
-            "android_channnel_id": "dbfood",
-          },
-          "to": token,
+    try {
+      await http.post(
+        Uri.parse("https://fcm.googleapis.com/fcm/send"),
+        headers: <String, String>{
+          "Content-Type": "application/json",
+          "Authorization": "key=$serverKey",
         },
-      ),
-    );
+        body: jsonEncode(
+          <String, dynamic>{
+            "priority": "high",
+            "data": <String, dynamic>{
+              "click_action": "FLUTTER_NOTIFICATION_CLICK",
+              "status": "done",
+              "title": title,
+              "body": body,
+            },
+            "notification": <String, dynamic>{
+              "title": title,
+              "body": body,
+              "android_channnel_id": "dbfood",
+            },
+            "to": token,
+          },
+        ),
+      );
+
+      print("Message sent successfully");
+    } catch (e) {
+      print("Error sending push notication message$e");
+    }
   }
 
   @override
@@ -209,6 +225,8 @@ class _MainScreenState extends State<MainScreen> {
                       final token = snap['token'];
 
                       print(token);
+
+                      sendPushMessage(token, bodyText, titleText);
                     }
                   },
                   child: Container(
