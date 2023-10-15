@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import "package:http/http.dart" as http;
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -13,8 +17,12 @@ class _MainScreenState extends State<MainScreen> {
   TextEditingController usernameController = TextEditingController();
   TextEditingController titleController = TextEditingController();
   TextEditingController bodyController = TextEditingController();
+  late FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
   String? mtoken;
+
+  // Go to you Project settings -> Cloud Messaging -> Enable Cloud Messaging API -> Copy paste your token here (Avoid pushing to public repo)
+  String serverKey = "";
 
   @override
   void initState() {
@@ -24,7 +32,64 @@ class _MainScreenState extends State<MainScreen> {
     super.initState();
   }
 
-  void initInfo() {}
+  void initInfo() async {
+    flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.requestNotificationsPermission();
+
+    var androidInitialise = const AndroidInitializationSettings("@mipmap/ic_launcher");
+    var iOSInitialise = const DarwinInitializationSettings();
+    var initializationsSettings = InitializationSettings(android: androidInitialise, iOS: iOSInitialise);
+
+    // FlutterLocalNotificationsPlugin().initialize(initializationsSettings, onDidReceiveNotificationResponse: )
+    await flutterLocalNotificationsPlugin.initialize(
+      initializationsSettings,
+      onDidReceiveNotificationResponse: (notification) {
+        try {
+          if (notification.payload != null && notification.payload!.isNotEmpty) {
+            //
+          } else {
+            //
+          }
+        } catch (e) {
+          //
+        }
+      },
+    );
+
+    /// To listen to incoming notifications
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+      /// This is the only part that has to do with firebase notifications
+      print("---------------------------onMessage------------------------");
+      print("onMessage: ${message.notification?.title}/${message.notification?.body}");
+
+      /// Everything from this section has to do with flutter local notifications
+      BigTextStyleInformation bigTextStyleInformation = BigTextStyleInformation(
+        message.notification!.body.toString(),
+        htmlFormatBigText: true,
+        contentTitle: message.notification?.title.toString(),
+        htmlFormatTitle: true,
+      );
+
+      AndroidNotificationDetails androidPlatformChannelSpecifics = AndroidNotificationDetails(
+        "dbfood",
+        "dbfood",
+        importance: Importance.high,
+        styleInformation: bigTextStyleInformation,
+        priority: Priority.high,
+        playSound: true,
+      );
+
+      NotificationDetails platformChannelSpecifics = NotificationDetails(android: androidPlatformChannelSpecifics);
+
+      // show the notification message
+      await flutterLocalNotificationsPlugin.show(
+        0,
+        message.notification?.title,
+        message.notification?.body,
+        platformChannelSpecifics,
+        payload: message.data['body'],
+      );
+    });
+  }
 
   void getToken() async {
     await FirebaseMessaging.instance.getToken().then((String? token) {
@@ -46,8 +111,6 @@ class _MainScreenState extends State<MainScreen> {
   void requestPermission() async {
     FirebaseMessaging messaging = FirebaseMessaging.instance;
 
-    await messaging.getInitialMessage();
-
     NotificationSettings settings = await messaging.requestPermission(
       alert: true,
       announcement: false,
@@ -65,6 +128,33 @@ class _MainScreenState extends State<MainScreen> {
     } else {
       print("User denied permission or permission has not been accepted");
     }
+  }
+
+  void sendPushMessage(String token, String body, String title) async {
+    await http.post(
+      Uri.parse("https://fcm.googleapis.com/fcm/send"),
+      headers: <String, String>{
+        "Content-Type": "application/json",
+        "Authorization": "key=$serverKey",
+      },
+      body: jsonEncode(
+        <String, dynamic>{
+          "priority": "high",
+          "data": <String, dynamic>{
+            "click_action": "FLUTTER_NOTIFICATION_CLICK",
+            "status": "done",
+            "title": title,
+            "body": body,
+          },
+          "notification": <String, dynamic>{
+            "title": title,
+            "body": body,
+            "android_channnel_id": "dbfood",
+          },
+          "to": token,
+        },
+      ),
+    );
   }
 
   @override
@@ -108,10 +198,18 @@ class _MainScreenState extends State<MainScreen> {
               SafeArea(
                 top: false,
                 child: GestureDetector(
-                  onTap: () {
+                  onTap: () async {
                     String name = usernameController.text.trim();
                     String titleText = titleController.text.trim();
                     String bodyText = bodyController.text.trim();
+
+                    if (name != "") {
+                      DocumentSnapshot snap = await FirebaseFirestore.instance.collection("UserTokens").doc(name).get();
+
+                      final token = snap['token'];
+
+                      print(token);
+                    }
                   },
                   child: Container(
                     height: 50,
